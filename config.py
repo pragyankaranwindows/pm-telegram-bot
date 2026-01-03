@@ -1,3 +1,4 @@
-TOKEN = "1581267484:AAEouhXbw1cl1FI7zL07HkOKCPTAuqoMuHQ"
-OWNER_ID = 804034411  # your Telegram ID
+import os
 
+TOKEN = os.getenv("TOKEN")
+OWNER_ID = int(os.getenv("OWNER_ID"))
