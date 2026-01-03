@@ -4,11 +4,14 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import Message, CallbackQuery
 
 from config import TOKEN, OWNER_ID
-from database import add_user, remove_user, list_users
+from database import (
+    add_user, remove_user, list_users,
+    add_admin, remove_admin, list_admins, is_admin
+)
 from keyboards import admin_panel_kb
 
 # -------- VERSION --------
-BOT_VERSION = "ALPHA-CONTROL-v2.3"
+BOT_VERSION = "ALPHA-CONTROL-v3.0"
 
 # -------- INIT --------
 bot = Bot(token=TOKEN)
@@ -16,11 +19,15 @@ dp = Dispatcher()
 
 DENY_MSG = "⛔ You are not my master.\nOnly my master can use this command."
 
-# This stores: forwarded_message_id -> original_user_id
+# message_id -> original_user_id
 REPLY_MAP = {}
 
-def is_owner(user_id: int) -> bool:
-    return user_id == OWNER_ID
+# -------- ROLE CHECKS --------
+def is_owner(uid: int) -> bool:
+    return uid == OWNER_ID
+
+def is_controller(uid: int) -> bool:
+    return is_owner(uid) or is_admin(uid)
 
 # -------- START --------
 @dp.message(CommandStart())
@@ -36,59 +43,40 @@ async def start_cmd(message: Message):
 # -------- ADMIN PANEL --------
 @dp.message(Command("panel"))
 async def panel_cmd(message: Message):
-    if not is_owner(message.from_user.id):
+    if not is_controller(message.from_user.id):
         await message.answer(DENY_MSG)
         return
 
     await message.answer(
         "⚡ **ALPHA CONTROL PANEL** ⚡\n\n"
-        "🛡️ Clearance: OWNER\n"
+        "🛡️ Clearance: ADMIN\n"
         "📡 Status: ONLINE\n\n"
         "Select an operation:",
         reply_markup=admin_panel_kb(),
         parse_mode="Markdown"
     )
 
-# -------- CALLBACK HANDLER --------
+# -------- CALLBACKS --------
 @dp.callback_query()
-async def panel_callbacks(call: CallbackQuery):
-    if not is_owner(call.from_user.id):
-        await call.answer("⛔ You are not my master.", show_alert=True)
+async def callbacks(call: CallbackQuery):
+    if not is_controller(call.from_user.id):
+        await call.answer("⛔ Access Denied", show_alert=True)
         return
 
-    if call.data == "add_user":
-        await call.message.answer("➕ Use `/adduser USER_ID`", parse_mode="Markdown")
-
-    elif call.data == "remove_user":
-        await call.message.answer("➖ Use `/removeuser USER_ID`", parse_mode="Markdown")
-
-    elif call.data == "list_users":
-        users = list_users()
-        if not users:
-            await call.message.answer("👥 No active agents.")
-        else:
-            await call.message.answer(
-                "👥 **ACTIVE AGENTS**\n\n" + "\n".join(f"🧿 `{u}`" for u in users),
-                parse_mode="Markdown"
-            )
-
-    elif call.data == "broadcast":
-        await call.message.answer("📢 Use `/broadcast MESSAGE`", parse_mode="Markdown")
-
-    elif call.data == "status":
+    if call.data == "status":
         await call.message.answer(
             "🛰️ **SYSTEM STATUS**\n\n"
-            "• Core: 🟢 Online\n"
-            "• Relay: 🟢 Stable\n"
-            "• Security: 🔒 Enforced"
+            f"Admins: {len(list_admins())}\n"
+            f"Agents: {len(list_users())}\n"
+            "Security: 🔒 Enforced"
         )
 
     await call.answer()
 
-# -------- ADMIN COMMANDS --------
+# -------- ADMIN COMMANDS (ADMIN + OWNER) --------
 @dp.message(Command("adduser"))
 async def adduser_cmd(message: Message):
-    if not is_owner(message.from_user.id):
+    if not is_controller(message.from_user.id):
         await message.answer(DENY_MSG)
         return
 
@@ -101,7 +89,7 @@ async def adduser_cmd(message: Message):
 
 @dp.message(Command("removeuser"))
 async def removeuser_cmd(message: Message):
-    if not is_owner(message.from_user.id):
+    if not is_controller(message.from_user.id):
         await message.answer(DENY_MSG)
         return
 
@@ -114,7 +102,7 @@ async def removeuser_cmd(message: Message):
 
 @dp.message(Command("broadcast"))
 async def broadcast_cmd(message: Message):
-    if not is_owner(message.from_user.id):
+    if not is_controller(message.from_user.id):
         await message.answer(DENY_MSG)
         return
 
@@ -126,34 +114,70 @@ async def broadcast_cmd(message: Message):
     sent = 0
     for uid in list_users():
         try:
-            await bot.send_message(uid, f"📢 **ALPHA BROADCAST**\n\n{msg}", parse_mode="Markdown")
+            await bot.send_message(uid, f"📢 **ALPHA BROADCAST**\n\n{msg}")
             sent += 1
         except:
             pass
 
     await message.answer(f"📡 Broadcast sent to {sent} agents.")
 
-# -------- OWNER REPLY HANDLER --------
-@dp.message(F.reply_to_message)
-async def owner_reply(message: Message):
+# -------- OWNER-ONLY ADMIN MANAGEMENT --------
+@dp.message(Command("addadmin"))
+async def addadmin_cmd(message: Message):
     if not is_owner(message.from_user.id):
+        await message.answer(DENY_MSG)
+        return
+
+    try:
+        uid = int(message.text.split()[1])
+        add_admin(uid)
+        await message.answer(f"🛡️ Admin `{uid}` added.", parse_mode="Markdown")
+    except:
+        await message.answer("Usage: /addadmin USER_ID")
+
+@dp.message(Command("removeadmin"))
+async def removeadmin_cmd(message: Message):
+    if not is_owner(message.from_user.id):
+        await message.answer(DENY_MSG)
+        return
+
+    try:
+        uid = int(message.text.split()[1])
+        remove_admin(uid)
+        await message.answer(f"❌ Admin `{uid}` removed.", parse_mode="Markdown")
+    except:
+        await message.answer("Usage: /removeadmin USER_ID")
+
+@dp.message(Command("listadmins"))
+async def listadmins_cmd(message: Message):
+    if not is_owner(message.from_user.id):
+        await message.answer(DENY_MSG)
+        return
+
+    admins = list_admins()
+    if not admins:
+        await message.answer("No admins.")
+    else:
+        await message.answer(
+            "🛡️ **ADMINS**\n\n" + "\n".join(f"• `{a}`" for a in admins),
+            parse_mode="Markdown"
+        )
+
+# -------- OWNER / ADMIN REPLY SYSTEM --------
+@dp.message(F.reply_to_message)
+async def reply_handler(message: Message):
+    if not is_controller(message.from_user.id):
         return
 
     replied_id = message.reply_to_message.message_id
-
     if replied_id not in REPLY_MAP:
         return
 
-    target_user_id = REPLY_MAP[replied_id]
-
-    await bot.send_message(
-        target_user_id,
-        message.text
-    )
-
+    target_user = REPLY_MAP[replied_id]
+    await bot.send_message(target_user, message.text)
     await message.answer("✅ Reply sent.")
 
-# -------- PM FORWARD (TEXT ONLY) --------
+# -------- PM FORWARD --------
 @dp.message(F.text & ~F.text.startswith("/"))
 async def forward_pm(message: Message):
     user = message.from_user
@@ -167,13 +191,9 @@ async def forward_pm(message: Message):
         parse_mode="Markdown"
     )
 
-    # Store mapping for reply
     REPLY_MAP[sent.message_id] = user.id
 
 # -------- RUN --------
 async def main():
     print(f"🚀 BOT STARTED: {BOT_VERSION}")
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    await
