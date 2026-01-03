@@ -8,13 +8,16 @@ from database import add_user, remove_user, list_users
 from keyboards import admin_panel_kb
 
 # -------- VERSION --------
-BOT_VERSION = "ALPHA-CONTROL-v2.2"
+BOT_VERSION = "ALPHA-CONTROL-v2.3"
 
 # -------- INIT --------
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 DENY_MSG = "⛔ You are not my master.\nOnly my master can use this command."
+
+# This stores: forwarded_message_id -> original_user_id
+REPLY_MAP = {}
 
 def is_owner(user_id: int) -> bool:
     return user_id == OWNER_ID
@@ -54,34 +57,23 @@ async def panel_callbacks(call: CallbackQuery):
         return
 
     if call.data == "add_user":
-        await call.message.answer(
-            "➕ **Enroll Agent**\n\n"
-            "Use command:\n`/adduser USER_ID`",
-            parse_mode="Markdown"
-        )
+        await call.message.answer("➕ Use `/adduser USER_ID`", parse_mode="Markdown")
 
     elif call.data == "remove_user":
-        await call.message.answer(
-            "➖ **Revoke Agent**\n\n"
-            "Use command:\n`/removeuser USER_ID`",
-            parse_mode="Markdown"
-        )
+        await call.message.answer("➖ Use `/removeuser USER_ID`", parse_mode="Markdown")
 
     elif call.data == "list_users":
         users = list_users()
         if not users:
             await call.message.answer("👥 No active agents.")
         else:
-            text = "👥 **ACTIVE AGENTS**\n\n"
-            text += "\n".join(f"🧿 `{u}`" for u in users)
-            await call.message.answer(text, parse_mode="Markdown")
+            await call.message.answer(
+                "👥 **ACTIVE AGENTS**\n\n" + "\n".join(f"🧿 `{u}`" for u in users),
+                parse_mode="Markdown"
+            )
 
     elif call.data == "broadcast":
-        await call.message.answer(
-            "📢 **GLOBAL BROADCAST**\n\n"
-            "Use command:\n`/broadcast MESSAGE`",
-            parse_mode="Markdown"
-        )
+        await call.message.answer("📢 Use `/broadcast MESSAGE`", parse_mode="Markdown")
 
     elif call.data == "status":
         await call.message.answer(
@@ -100,17 +92,12 @@ async def adduser_cmd(message: Message):
         await message.answer(DENY_MSG)
         return
 
-    parts = message.text.split()
-    if len(parts) != 2:
-        await message.answer("Usage: /adduser USER_ID")
-        return
-
     try:
-        uid = int(parts[1])
+        uid = int(message.text.split()[1])
         add_user(uid)
         await message.answer(f"✅ Agent `{uid}` enrolled.", parse_mode="Markdown")
     except:
-        await message.answer("Invalid USER_ID")
+        await message.answer("Usage: /adduser USER_ID")
 
 @dp.message(Command("removeuser"))
 async def removeuser_cmd(message: Message):
@@ -118,17 +105,12 @@ async def removeuser_cmd(message: Message):
         await message.answer(DENY_MSG)
         return
 
-    parts = message.text.split()
-    if len(parts) != 2:
-        await message.answer("Usage: /removeuser USER_ID")
-        return
-
     try:
-        uid = int(parts[1])
+        uid = int(message.text.split()[1])
         remove_user(uid)
         await message.answer(f"❌ Agent `{uid}` revoked.", parse_mode="Markdown")
     except:
-        await message.answer("Invalid USER_ID")
+        await message.answer("Usage: /removeuser USER_ID")
 
 @dp.message(Command("broadcast"))
 async def broadcast_cmd(message: Message):
@@ -144,22 +126,39 @@ async def broadcast_cmd(message: Message):
     sent = 0
     for uid in list_users():
         try:
-            await bot.send_message(
-                uid,
-                f"📢 **ALPHA BROADCAST**\n\n{msg}",
-                parse_mode="Markdown"
-            )
+            await bot.send_message(uid, f"📢 **ALPHA BROADCAST**\n\n{msg}", parse_mode="Markdown")
             sent += 1
         except:
             pass
 
     await message.answer(f"📡 Broadcast sent to {sent} agents.")
 
+# -------- OWNER REPLY HANDLER --------
+@dp.message(F.reply_to_message)
+async def owner_reply(message: Message):
+    if not is_owner(message.from_user.id):
+        return
+
+    replied_id = message.reply_to_message.message_id
+
+    if replied_id not in REPLY_MAP:
+        return
+
+    target_user_id = REPLY_MAP[replied_id]
+
+    await bot.send_message(
+        target_user_id,
+        message.text
+    )
+
+    await message.answer("✅ Reply sent.")
+
 # -------- PM FORWARD (TEXT ONLY) --------
 @dp.message(F.text & ~F.text.startswith("/"))
 async def forward_pm(message: Message):
     user = message.from_user
-    await bot.send_message(
+
+    sent = await bot.send_message(
         OWNER_ID,
         f"📩 **INCOMING MESSAGE**\n\n"
         f"👤 {user.first_name} (@{user.username})\n"
@@ -167,6 +166,9 @@ async def forward_pm(message: Message):
         f"{message.text}",
         parse_mode="Markdown"
     )
+
+    # Store mapping for reply
+    REPLY_MAP[sent.message_id] = user.id
 
 # -------- RUN --------
 async def main():
