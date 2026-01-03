@@ -7,12 +7,14 @@ from config import TOKEN, OWNER_ID
 from database import add_user, remove_user, list_users
 from keyboards import admin_panel_kb
 
-# -------- VERSION TAG (FOR DEPLOY CONFIRMATION) --------
-BOT_VERSION = "ALPHA-CONTROL-v2.1"
+# -------- VERSION --------
+BOT_VERSION = "ALPHA-CONTROL-v2.2"
 
 # -------- INIT --------
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+
+DENY_MSG = "⛔ You are not my master.\nOnly my master can use this command."
 
 def is_owner(user_id: int) -> bool:
     return user_id == OWNER_ID
@@ -32,6 +34,7 @@ async def start_cmd(message: Message):
 @dp.message(Command("panel"))
 async def panel_cmd(message: Message):
     if not is_owner(message.from_user.id):
+        await message.answer(DENY_MSG)
         return
 
     await message.answer(
@@ -47,7 +50,7 @@ async def panel_cmd(message: Message):
 @dp.callback_query()
 async def panel_callbacks(call: CallbackQuery):
     if not is_owner(call.from_user.id):
-        await call.answer("⛔ ACCESS DENIED", show_alert=True)
+        await call.answer("⛔ You are not my master.", show_alert=True)
         return
 
     if call.data == "add_user":
@@ -94,6 +97,7 @@ async def panel_callbacks(call: CallbackQuery):
 @dp.message(Command("adduser"))
 async def adduser_cmd(message: Message):
     if not is_owner(message.from_user.id):
+        await message.answer(DENY_MSG)
         return
 
     parts = message.text.split()
@@ -111,6 +115,7 @@ async def adduser_cmd(message: Message):
 @dp.message(Command("removeuser"))
 async def removeuser_cmd(message: Message):
     if not is_owner(message.from_user.id):
+        await message.answer(DENY_MSG)
         return
 
     parts = message.text.split()
@@ -128,6 +133,7 @@ async def removeuser_cmd(message: Message):
 @dp.message(Command("broadcast"))
 async def broadcast_cmd(message: Message):
     if not is_owner(message.from_user.id):
+        await message.answer(DENY_MSG)
         return
 
     msg = message.text.replace("/broadcast", "").strip()
@@ -149,7 +155,7 @@ async def broadcast_cmd(message: Message):
 
     await message.answer(f"📡 Broadcast sent to {sent} agents.")
 
-# -------- PM FORWARD (TEXT ONLY, NO COMMANDS) --------
+# -------- PM FORWARD (TEXT ONLY) --------
 @dp.message(F.text & ~F.text.startswith("/"))
 async def forward_pm(message: Message):
     user = message.from_user
