@@ -10,26 +10,25 @@ from database import (
 )
 from keyboards import admin_panel_kb
 
-# -------- VERSION --------
-BOT_VERSION = "ALPHA-CONTROL-v3.0"
+# ================= CONFIG =================
+BOT_VERSION = "ALPHA-CONTROL-v3.1"
+DENY_MSG = "⛔ You are not my master.\nOnly my master can use this command."
 
-# -------- INIT --------
+# ================= INIT ===================
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-
-DENY_MSG = "⛔ You are not my master.\nOnly my master can use this command."
 
 # message_id -> original_user_id
 REPLY_MAP = {}
 
-# -------- ROLE CHECKS --------
+# ================= ROLES ==================
 def is_owner(uid: int) -> bool:
     return uid == OWNER_ID
 
 def is_controller(uid: int) -> bool:
     return is_owner(uid) or is_admin(uid)
 
-# -------- START --------
+# ================= START ==================
 @dp.message(CommandStart())
 async def start_cmd(message: Message):
     await message.answer(
@@ -40,7 +39,7 @@ async def start_cmd(message: Message):
         parse_mode="Markdown"
     )
 
-# -------- ADMIN PANEL --------
+# ================= PANEL ==================
 @dp.message(Command("panel"))
 async def panel_cmd(message: Message):
     if not is_controller(message.from_user.id):
@@ -56,9 +55,9 @@ async def panel_cmd(message: Message):
         parse_mode="Markdown"
     )
 
-# -------- CALLBACKS --------
+# ================= CALLBACKS ==============
 @dp.callback_query()
-async def callbacks(call: CallbackQuery):
+async def panel_callbacks(call: CallbackQuery):
     if not is_controller(call.from_user.id):
         await call.answer("⛔ Access Denied", show_alert=True)
         return
@@ -73,7 +72,7 @@ async def callbacks(call: CallbackQuery):
 
     await call.answer()
 
-# -------- ADMIN COMMANDS (ADMIN + OWNER) --------
+# ================= AGENT MGMT ==============
 @dp.message(Command("adduser"))
 async def adduser_cmd(message: Message):
     if not is_controller(message.from_user.id):
@@ -100,6 +99,7 @@ async def removeuser_cmd(message: Message):
     except:
         await message.answer("Usage: /removeuser USER_ID")
 
+# ================= BROADCAST ==============
 @dp.message(Command("broadcast"))
 async def broadcast_cmd(message: Message):
     if not is_controller(message.from_user.id):
@@ -121,7 +121,7 @@ async def broadcast_cmd(message: Message):
 
     await message.answer(f"📡 Broadcast sent to {sent} agents.")
 
-# -------- OWNER-ONLY ADMIN MANAGEMENT --------
+# ================= ADMIN MGMT (OWNER ONLY) =================
 @dp.message(Command("addadmin"))
 async def addadmin_cmd(message: Message):
     if not is_owner(message.from_user.id):
@@ -163,26 +163,27 @@ async def listadmins_cmd(message: Message):
             parse_mode="Markdown"
         )
 
-# -------- OWNER / ADMIN REPLY SYSTEM --------
+# ================= REPLY SYSTEM =================
 @dp.message(F.reply_to_message)
 async def reply_handler(message: Message):
     if not is_controller(message.from_user.id):
         return
 
-    replied_id = message.reply_to_message.message_id
-    if replied_id not in REPLY_MAP:
+    replied_msg_id = message.reply_to_message.message_id
+    if replied_msg_id not in REPLY_MAP:
         return
 
-    target_user = REPLY_MAP[replied_id]
-    await bot.send_message(target_user, message.text)
+    target_user_id = REPLY_MAP[replied_msg_id]
+
+    await bot.send_message(target_user_id, message.text)
     await message.answer("✅ Reply sent.")
 
-# -------- PM FORWARD --------
+# ================= PM FORWARD =================
 @dp.message(F.text & ~F.text.startswith("/"))
 async def forward_pm(message: Message):
     user = message.from_user
 
-    sent = await bot.send_message(
+    forwarded = await bot.send_message(
         OWNER_ID,
         f"📩 **INCOMING MESSAGE**\n\n"
         f"👤 {user.first_name} (@{user.username})\n"
@@ -191,9 +192,12 @@ async def forward_pm(message: Message):
         parse_mode="Markdown"
     )
 
-    REPLY_MAP[sent.message_id] = user.id
+    REPLY_MAP[forwarded.message_id] = user.id
 
-# -------- RUN --------
+# ================= RUN =================
 async def main():
     print(f"🚀 BOT STARTED: {BOT_VERSION}")
-    await
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
