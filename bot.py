@@ -7,16 +7,17 @@ from config import TOKEN, OWNER_ID
 from database import add_user, remove_user, list_users
 from keyboards import admin_panel_kb
 
-BOT_VERSION = "ALPHA-CONTROL-v2.0"
+# -------- VERSION TAG (FOR DEPLOY CONFIRMATION) --------
+BOT_VERSION = "ALPHA-CONTROL-v2.1"
 
+# -------- INIT --------
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-def is_owner(uid: int) -> bool:
-    return uid == OWNER_ID
+def is_owner(user_id: int) -> bool:
+    return user_id == OWNER_ID
 
-# ---------------- START ----------------
-
+# -------- START --------
 @dp.message(CommandStart())
 async def start_cmd(message: Message):
     await message.answer(
@@ -27,8 +28,7 @@ async def start_cmd(message: Message):
         parse_mode="Markdown"
     )
 
-# ---------------- ADMIN PANEL ----------------
-
+# -------- ADMIN PANEL --------
 @dp.message(Command("panel"))
 async def panel_cmd(message: Message):
     if not is_owner(message.from_user.id):
@@ -38,13 +38,12 @@ async def panel_cmd(message: Message):
         "⚡ **ALPHA CONTROL PANEL** ⚡\n\n"
         "🛡️ Clearance: OWNER\n"
         "📡 Status: ONLINE\n\n"
-        "Select operation:",
+        "Select an operation:",
         reply_markup=admin_panel_kb(),
         parse_mode="Markdown"
     )
 
-# ---------------- CALLBACKS ----------------
-
+# -------- CALLBACK HANDLER --------
 @dp.callback_query()
 async def panel_callbacks(call: CallbackQuery):
     if not is_owner(call.from_user.id):
@@ -52,59 +51,79 @@ async def panel_callbacks(call: CallbackQuery):
         return
 
     if call.data == "add_user":
-        await call.message.answer("➕ Use:\n`/adduser USER_ID`", parse_mode="Markdown")
+        await call.message.answer(
+            "➕ **Enroll Agent**\n\n"
+            "Use command:\n`/adduser USER_ID`",
+            parse_mode="Markdown"
+        )
 
     elif call.data == "remove_user":
-        await call.message.answer("➖ Use:\n`/removeuser USER_ID`", parse_mode="Markdown")
+        await call.message.answer(
+            "➖ **Revoke Agent**\n\n"
+            "Use command:\n`/removeuser USER_ID`",
+            parse_mode="Markdown"
+        )
 
     elif call.data == "list_users":
         users = list_users()
         if not users:
             await call.message.answer("👥 No active agents.")
         else:
-            await call.message.answer(
-                "👥 **ACTIVE AGENTS**\n\n" + "\n".join(f"🧿 `{u}`" for u in users),
-                parse_mode="Markdown"
-            )
+            text = "👥 **ACTIVE AGENTS**\n\n"
+            text += "\n".join(f"🧿 `{u}`" for u in users)
+            await call.message.answer(text, parse_mode="Markdown")
 
     elif call.data == "broadcast":
-        await call.message.answer("📢 Use:\n`/broadcast MESSAGE`", parse_mode="Markdown")
+        await call.message.answer(
+            "📢 **GLOBAL BROADCAST**\n\n"
+            "Use command:\n`/broadcast MESSAGE`",
+            parse_mode="Markdown"
+        )
 
     elif call.data == "status":
         await call.message.answer(
             "🛰️ **SYSTEM STATUS**\n\n"
-            "Core: 🟢 Online\n"
-            "Security: 🔒 Enforced\n"
-            "Relay: 🟢 Stable"
+            "• Core: 🟢 Online\n"
+            "• Relay: 🟢 Stable\n"
+            "• Security: 🔒 Enforced"
         )
 
     await call.answer()
 
-# ---------------- ADMIN COMMANDS ----------------
-
+# -------- ADMIN COMMANDS --------
 @dp.message(Command("adduser"))
 async def adduser_cmd(message: Message):
     if not is_owner(message.from_user.id):
         return
 
-    try:
-        uid = int(message.text.split()[1])
-        add_user(uid)
-        await message.answer(f"✅ Agent `{uid}` added.", parse_mode="Markdown")
-    except:
+    parts = message.text.split()
+    if len(parts) != 2:
         await message.answer("Usage: /adduser USER_ID")
+        return
+
+    try:
+        uid = int(parts[1])
+        add_user(uid)
+        await message.answer(f"✅ Agent `{uid}` enrolled.", parse_mode="Markdown")
+    except:
+        await message.answer("Invalid USER_ID")
 
 @dp.message(Command("removeuser"))
 async def removeuser_cmd(message: Message):
     if not is_owner(message.from_user.id):
         return
 
-    try:
-        uid = int(message.text.split()[1])
-        remove_user(uid)
-        await message.answer(f"❌ Agent `{uid}` removed.", parse_mode="Markdown")
-    except:
+    parts = message.text.split()
+    if len(parts) != 2:
         await message.answer("Usage: /removeuser USER_ID")
+        return
+
+    try:
+        uid = int(parts[1])
+        remove_user(uid)
+        await message.answer(f"❌ Agent `{uid}` revoked.", parse_mode="Markdown")
+    except:
+        await message.answer("Invalid USER_ID")
 
 @dp.message(Command("broadcast"))
 async def broadcast_cmd(message: Message):
@@ -116,18 +135,21 @@ async def broadcast_cmd(message: Message):
         await message.answer("Usage: /broadcast MESSAGE")
         return
 
-    count = 0
+    sent = 0
     for uid in list_users():
         try:
-            await bot.send_message(uid, f"📢 **ALPHA BROADCAST**\n\n{msg}", parse_mode="Markdown")
-            count += 1
+            await bot.send_message(
+                uid,
+                f"📢 **ALPHA BROADCAST**\n\n{msg}",
+                parse_mode="Markdown"
+            )
+            sent += 1
         except:
             pass
 
-    await message.answer(f"📡 Broadcast sent to {count} agents.")
+    await message.answer(f"📡 Broadcast sent to {sent} agents.")
 
-# ---------------- PM FORWARD (TEXT ONLY) ----------------
-
+# -------- PM FORWARD (TEXT ONLY, NO COMMANDS) --------
 @dp.message(F.text & ~F.text.startswith("/"))
 async def forward_pm(message: Message):
     user = message.from_user
@@ -137,4 +159,13 @@ async def forward_pm(message: Message):
         f"👤 {user.first_name} (@{user.username})\n"
         f"🆔 `{user.id}`\n\n"
         f"{message.text}",
-        parse_mode="Markdo_
+        parse_mode="Markdown"
+    )
+
+# -------- RUN --------
+async def main():
+    print(f"🚀 BOT STARTED: {BOT_VERSION}")
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
