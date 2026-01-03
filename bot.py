@@ -17,8 +17,8 @@ def is_owner(user_id: int) -> bool:
 
 # ---------------- START ----------------
 
-@dp.message(Command("start"))
-async def start_cmd(message: types.Message):
+@dp.message(~Command())
+async def forward_pm(message: types.Message):
     await message.answer(
         "🤖 **PM RELAY NODE ONLINE**\n\n"
         "Send your message here.\n"
